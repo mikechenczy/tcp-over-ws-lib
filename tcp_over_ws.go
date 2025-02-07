@@ -672,9 +672,9 @@ func dnsPreferIpWithTtl(hostname string, ttl uint32) {
 func start(args []string) {
 	arg_num := len(args)
 	if arg_num < 5 || arg_num%2 != 0 {
-		log.Println("Client: ws://tcp2wsUrl auto none server1 localPort\nServer: server false tcp2wsPort ip:port\nUse wss: server true server.crt server.key tcp2wsPort ip:port")
-		log.Println()
-		log.Println("Make ssl cert:\nopenssl genrsa -out server.key 2048\nopenssl ecparam -genkey -name secp384r1 -out server.key\nopenssl req -new -x509 -sha256 -key server.key -out server.crt -days 36500")
+		log.Print("Client: ws://tcp2wsUrl auto none server1 localPort\nServer: server false tcp2wsPort ip:port\nUse wss: server true server.crt server.key tcp2wsPort ip:port")
+		log.Print()
+		log.Print("Make ssl cert:\nopenssl genrsa -out server.key 2048\nopenssl ecparam -genkey -name secp384r1 -out server.key\nopenssl req -new -x509 -sha256 -key server.key -out server.crt -days 36500")
 		return
 	}
 	isServer = args[1] == "server"
@@ -814,7 +814,6 @@ func start(args []string) {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt, os.Kill)
 			<-c
-			log.Println()
 			log.Print("quit...")
 			for k := range connMap {
 				deleteConn(k)
