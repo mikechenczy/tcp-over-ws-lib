@@ -604,7 +604,7 @@ func dnsPreferIp(hostname string) (string, uint32) {
 	}
 	r, _, err := uc.Exchange(&m, systemDns+":53")
 	if err != nil {
-		log.Print("Local DNS Fail: ", err)
+		// log.Print("Local DNS Fail: ", err)
 		r, _, err = c.Exchange(&m, "223.5.5.5:53")
 		if err != nil {
 			log.Print("OpenDNS Fail: ", err)
