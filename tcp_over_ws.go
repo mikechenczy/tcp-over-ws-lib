@@ -2,7 +2,6 @@ package tcp_over_ws_lib
 
 import (
 	"crypto/tls"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
@@ -39,7 +38,7 @@ var (
 	listenPorts  = make(map[string]string)
 	wsAddr       string
 	wsAddrIp     string
-	wsAddrPort              = ""
+	wsAddrPort       = ""
 	msgType      int = websocket.BinaryMessage
 	isServer     bool
 	connMap      = make(map[string]*tcp2wsSparkle)
@@ -479,13 +478,6 @@ func runClientUdp(listenHostPort string, serverPath string) {
 
 // 响应ws请求
 func wsHandler(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/")
-	target, exists := tcpAddresses[path]
-	if !exists {
-		http.Error(w, "Invalid path", http.StatusNotFound)
-		log.Println("Invalid WS path:", path)
-		return
-	}
 	forwarded := r.Header.Get("X-Forwarded-For")
 	// 不是ws的请求返回index.html 假装是一个静态服务器
 	if r.Header.Get("Upgrade") != "websocket" {
@@ -514,6 +506,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	path := strings.TrimPrefix(r.URL.Path, "/")
+	target, exists := tcpAddresses[path]
+	if !exists {
+		http.Error(w, "Invalid path", http.StatusNotFound)
+		log.Println("Invalid WS path:", path)
+		return
+	}
+
 	// 新线程hold住这条连接
 	go runServer(conn, target)
 }
@@ -538,7 +538,7 @@ func tcpHandler(listener net.Listener, serverPath string) {
 func startWsServer(listenPort string, isSsl bool, sslCrt string, sslKey string) {
 	var err error = nil
 	if isSsl {
-		fmt.Println("use ssl cert: " + sslCrt + " " + sslKey)
+		log.Println("use ssl cert: " + sslCrt + " " + sslKey)
 		err = http.ListenAndServeTLS(listenPort, sslCrt, sslKey, nil)
 	} else {
 		err = http.ListenAndServe(listenPort, nil)
@@ -581,8 +581,9 @@ func dnsPreferIp(hostname string) (string, uint32) {
 	// 从dns获取
 	log.Print("nslookup " + hostname)
 
-	tc := dns.Client{Net: "tcp", Timeout: 10 * time.Second}
+	//tc := dns.Client{Net: "tcp", Timeout: 10 * time.Second}
 	uc := dns.Client{Net: "udp", Timeout: 10 * time.Second}
+	c := new(dns.Client)
 	m := dns.Msg{}
 	m.SetQuestion(hostname+".", dns.TypeA)
 
@@ -603,11 +604,22 @@ func dnsPreferIp(hostname string) (string, uint32) {
 	}
 	r, _, err := uc.Exchange(&m, systemDns+":53")
 	if err != nil {
-		// log.Print("Local DNS Fail: ", err)
-		r, _, err = tc.Exchange(&m, "208.67.222.222:5353")
+		log.Print("Local DNS Fail: ", err)
+		r, _, err = c.Exchange(&m, "223.5.5.5:53")
 		if err != nil {
 			log.Print("OpenDNS Fail: ", err)
 			return "", 0
+		}
+		// 处理响应
+		if r.Rcode != dns.RcodeSuccess {
+			log.Printf("DNS query failed with Rcode %d\n", r.Rcode)
+		}
+
+		// 打印 A 记录
+		for _, ans := range r.Answer {
+			if aRecord, ok := ans.(*dns.A); ok {
+				log.Printf("A record for %s: %s\n", hostname, aRecord.A.String())
+			}
 		}
 	} else {
 		log.Print("Use System DNS ", systemDns)
@@ -653,10 +665,11 @@ func dnsPreferIpWithTtl(hostname string, ttl uint32) {
 
 func start(args []string) {
 	arg_num := len(args)
-	if arg_num < 3 {
-		fmt.Println("Client: client ws://tcp2wsUrl server1 localPort\nServer: server false tcp2wsPort ip:port\nUse wss: server true server.crt server.key tcp2wsPort ip:port")
-		fmt.Println("Make ssl cert:\nopenssl genrsa -out server.key 2048\nopenssl ecparam -genkey -name secp384r1 -out server.key\nopenssl req -new -x509 -sha256 -key server.key -out server.crt -days 36500")
-		os.Exit(0)
+	if arg_num < 5 || arg_num%2 != 0 {
+		log.Println("Client: client ws://tcp2wsUrl auto server1 localPort\nServer: server false tcp2wsPort ip:port\nUse wss: server true server.crt server.key tcp2wsPort ip:port")
+		log.Println()
+		log.Println("Make ssl cert:\nopenssl genrsa -out server.key 2048\nopenssl ecparam -genkey -name secp384r1 -out server.key\nopenssl req -new -x509 -sha256 -key server.key -out server.crt -days 36500")
+		return
 	}
 	isServer = args[1] == "server"
 	isSsl := args[2] == "true"
@@ -696,19 +709,19 @@ func start(args []string) {
 			for _, v := range tcpAddresses {
 				log.Print("Server Started wss://" + listenHostPort + " -> " + v)
 			}
-			fmt.Print("Proxy with Nginx:\nlocation /" + uuid.New().String()[24:] + "/ {\nproxy_pass https://")
+			log.Print("Proxy with Nginx:\nlocation /" + uuid.New().String()[24:] + "/ {\nproxy_pass https://")
 		} else {
 			for _, v := range tcpAddresses {
 				log.Print("Server Started ws://" + listenHostPort + " -> " + v)
 			}
-			fmt.Print("Proxy with Nginx:\nlocation /" + uuid.New().String()[24:] + "/ {\nproxy_pass http://")
+			log.Print("Proxy with Nginx:\nlocation /" + uuid.New().String()[24:] + "/ {\nproxy_pass http://")
 		}
 		if match {
-			fmt.Print("[::]:" + listenPort)
+			log.Print("[::]:" + listenPort)
 		} else {
-			fmt.Print(listenPort)
+			log.Print(listenPort)
 		}
-		fmt.Println("/;\nproxy_read_timeout 3600;\nproxy_http_version 1.1;\nproxy_set_header Upgrade $http_upgrade;\nproxy_set_header Connection \"Upgrade\";\nproxy_set_header X-Forwarded-For $remote_addr;\naccess_log off;\n}")
+		log.Println("/;\nproxy_read_timeout 3600;\nproxy_http_version 1.1;\nproxy_set_header Upgrade $http_upgrade;\nproxy_set_header Connection \"Upgrade\";\nproxy_set_header X-Forwarded-For $remote_addr;\naccess_log off;\n}")
 	} else {
 		wsAddr = args[2]
 		// 将ws服务端域名对应的ip缓存起来，避免多次请求dns或dns爆炸导致无法连接
@@ -733,18 +746,22 @@ func start(args []string) {
 			wsAddrIp = u.Hostname()
 			log.Print("tcping "+wsAddrIp+" ", tcping(wsAddrIp, wsAddrPort), "ms")
 		} else {
-			// 域名，需要解析，ip优选
-			var ttl uint32
-			wsAddrIp, ttl = dnsPreferIp(u.Hostname())
-			if wsAddrIp == "" {
-				log.Fatal("tcp2ws Client Start Error: dns resolve error")
-			} else if ttl > 0 {
-				// 根据dns ttl自动更新ip
-				go dnsPreferIpWithTtl(u.Hostname(), ttl)
+			if args[3] == "auto" {
+				// 域名，需要解析，ip优选
+				var ttl uint32
+				wsAddrIp, ttl = dnsPreferIp(u.Hostname())
+				if wsAddrIp == "" {
+					log.Fatal("tcp2ws Client Start Error: dns resolve error")
+				} else if ttl > 0 {
+					// 根据dns ttl自动更新ip
+					go dnsPreferIpWithTtl(u.Hostname(), ttl)
+				}
+			} else {
+				wsAddrIp = args[3]
 			}
 		}
-		for i := 3; i<arg_num; i+=2 {
-			serverPath := "/"+args[i]
+		for i := 4; i < arg_num; i += 2 {
+			serverPath := "/" + args[i]
 			listenPort := args[i+1]
 			match, _ := regexp.MatchString(`^\d+$`, listenPort)
 			listenHostPort := listenPort
@@ -762,7 +779,7 @@ func start(args []string) {
 			// 启动一个udp监听用于udp转发
 			go runClientUdp(listenHostPort, serverPath)
 
-			log.Print("Client Started " + listenHostPort + " -> " + wsAddr+serverPath)
+			log.Print("Client Started " + listenHostPort + " -> " + wsAddr + serverPath)
 		}
 	}
 	for {
@@ -790,16 +807,43 @@ func start(args []string) {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt, os.Kill)
 			<-c
-			fmt.Println()
+			log.Println()
 			log.Print("quit...")
-			for k, _ := range connMap {
+			for k := range connMap {
 				deleteConn(k)
 			}
-			os.Exit(0)
+			return
 		}
 	}
 }
 
-func Run(arg string)  {
-	start(strings.Split(arg, " "))
+type LogInterface interface {
+	LogCallback(msg string)
+}
+
+var logger LogInterface
+
+func SetLogger(log LogInterface) {
+	logger = log
+}
+
+func androidLog(msg string) {
+	if logger != nil {
+		logger.LogCallback(msg)
+	}
+}
+
+func Run(arg string) {
+	log.SetFlags(0)
+	log.SetOutput(logWriter{})
+
+	log.Println("Go started with arg:", arg)
+	start(strings.Fields("tcp_over_ws " + arg))
+}
+
+type logWriter struct{}
+
+func (logWriter) Write(p []byte) (n int, err error) {
+	androidLog(string(p))
+	return len(p), nil
 }
