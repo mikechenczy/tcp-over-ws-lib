@@ -581,9 +581,8 @@ func dnsPreferIp(hostname string) (string, uint32) {
 	// 从dns获取
 	log.Print("nslookup " + hostname)
 
-	//tc := dns.Client{Net: "tcp", Timeout: 10 * time.Second}
+	tc := dns.Client{Net: "tcp", Timeout: 10 * time.Second}
 	uc := dns.Client{Net: "udp", Timeout: 10 * time.Second}
-	c := new(dns.Client)
 	m := dns.Msg{}
 	m.SetQuestion(hostname+".", dns.TypeA)
 
@@ -605,7 +604,7 @@ func dnsPreferIp(hostname string) (string, uint32) {
 	r, _, err := uc.Exchange(&m, systemDns+":53")
 	if err != nil {
 		// log.Print("Local DNS Fail: ", err)
-		r, _, err = c.Exchange(&m, "223.5.5.5:53")
+		r, _, err = tc.Exchange(&m, "208.67.222.222:5353")
 		if err != nil {
 			log.Print("OpenDNS Fail: ", err)
 			return "", 0
