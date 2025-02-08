@@ -94,10 +94,10 @@ func dialNewWs(uuid string, serverPath string) bool {
 	} else if proxy != "auto" {
 		proxyUrl, err := url.Parse(proxy)
 		if err != nil {
-			log.Print("parse proxy err:  ", err)
+			log.Print("parse proxy err: ", err)
 		} else {
 			httpProxy = http.ProxyURL(proxyUrl)
-			log.Print("use proxy:  ", proxyUrl)
+			log.Print("use proxy: ", proxyUrl)
 		}
 	}
 	wsURL := wsAddr + serverPath
@@ -130,7 +130,7 @@ func dialNewWs(uuid string, serverPath string) bool {
 		// 解析新地址
 		newURL, err := url.Parse(newLocation)
 		if err != nil {
-			log.Println("解析新 URL 失败:", err)
+			log.Println("Parse URL failed: ", err)
 			return false
 		}
 
