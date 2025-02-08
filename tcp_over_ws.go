@@ -100,10 +100,56 @@ func dialNewWs(uuid string, serverPath string) bool {
 			log.Print("use proxy:  ", proxyUrl)
 		}
 	}
+	wsURL := wsAddr + serverPath
+	// 解析 URL
+	parsedURL, err := url.Parse(wsURL)
+	if err != nil {
+		log.Println("URL Parse err: ", err)
+		return false
+	}
+	// 创建 HTTP 客户端（支持重定向）
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	// 先发送 HTTP 请求，检查是否重定向
+	resp, err := client.Head("http://" + parsedURL.Host + parsedURL.Path)
+	if err != nil {
+		log.Println("HTTP Head for redirect failed: ", err)
+	} else {
+		defer resp.Body.Close()
+	}
+
+	// 如果返回 301/302，获取新的 Location
+	if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound {
+		newLocation := resp.Header.Get("Location")
+		log.Println("Redirect to: ", newLocation)
+
+		// 解析新地址
+		newURL, err := url.Parse(newLocation)
+		if err != nil {
+			log.Println("解析新 URL 失败:", err)
+			return false
+		}
+
+		// 修改 ws/wss 前缀
+		if newURL.Scheme == "http" {
+			newURL.Scheme = "ws"
+		} else if newURL.Scheme == "https" {
+			newURL.Scheme = "wss"
+		}
+
+		// 更新连接地址
+		wsURL = newURL.String()
+		wsAddrIp = newURL.Hostname()
+		wsAddrPort = ":" + newURL.Port()
+	}
 	// call ws
 	dialer := websocket.Dialer{TLSClientConfig: &tls.Config{RootCAs: nil, InsecureSkipVerify: true}, Proxy: httpProxy, NetDial: meDial}
 	// println("tcpAddr ", tcpAddr, " wsAddr ", wsAddr, " wsAddrIp ", wsAddrIp, " wsAddrPort ", wsAddrPort)
-	wsConn, _, err := dialer.Dial(wsAddr+serverPath, nil)
+	wsConn, _, err := dialer.Dial(wsURL, nil)
 	if err != nil {
 		log.Print("connect to ws err: ", err)
 		return false
@@ -521,17 +567,19 @@ func newReverseProxy(target string, pathPrefix string) *httputil.ReverseProxy {
 // 响应ws请求
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
-	for k, v := range tcpAddresses {
-		if !strings.Contains(path, "/") {
-			http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
-			return
-		}
-		firstPath := strings.Split(path, "/")[0]
-		if firstPath == k && strings.HasPrefix(v, "rp:") {
-			//Reverse Proxy
-			targetUrl := v[3:]
-			newReverseProxy(targetUrl, "/"+firstPath).ServeHTTP(w, r)
-			return
+	if path != "" {
+		for k, v := range tcpAddresses {
+			firstPath := strings.Split(path, "/")[0]
+			if firstPath == k && strings.HasPrefix(v, "rp:") {
+				//Reverse Proxy
+				if !strings.Contains(path, "/") {
+					http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+					return
+				}
+				targetUrl := v[3:]
+				newReverseProxy(targetUrl, "/"+firstPath).ServeHTTP(w, r)
+				return
+			}
 		}
 	}
 	forwarded := r.Header.Get("X-Forwarded-For")
