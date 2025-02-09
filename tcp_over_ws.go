@@ -552,7 +552,10 @@ func newReverseProxy(target string, pathPrefix string) *httputil.ReverseProxy {
 		//log.Printf("原始请求路径: %s", req.URL.Path)
 
 		// 确保请求 URL 的路径去掉前缀 `/test`
-		req.URL.Path = strings.TrimPrefix(req.URL.Path, pathPrefix)
+		if targetURL.Path == "/" {
+			targetURL.Path = ""
+		}
+		req.URL.Path = targetURL.Path + strings.TrimPrefix(req.URL.Path, pathPrefix)
 		req.URL.RawPath = req.URL.Path
 		req.URL.Host = targetURL.Host
 		req.URL.Scheme = targetURL.Scheme
@@ -768,7 +771,14 @@ func dnsPreferIpWithTtl(hostname string, ttl uint32) {
 func start(args []string) {
 	arg_num := len(args)
 	if arg_num < 5 || arg_num%2 != 0 {
-		log.Print("Client: ws://tcp2wsUrl auto none server1 localPort\nServer: server false tcp2wsPort ip:port\nUse wss: server true server.crt server.key tcp2wsPort ip:port")
+		log.Println("Usage:")
+		log.Println("Client: ws://addr auto(or ip/domain) none(or auto/your http proxy) server1 listenPort1 ...")
+		log.Println("Server: server false(true for ssl, need server.crt server.key) listenPort server1 ip:port(or just port for local) server2 rp:http://addr(rp: reverse proxy) ...")
+		log.Println()
+		log.Println("e.g.:")
+		log.Println("Client: ws://addr auto none rd 3389")
+		log.Println("Server: server false 9000 rd 3389 website 80 rp rp:http://addr")
+		log.Println("Server uses wss: server true server.crt server.key 9000 rd 3389")
 		log.Print()
 		log.Print("Make ssl cert:\nopenssl genrsa -out server.key 2048\nopenssl ecparam -genkey -name secp384r1 -out server.key\nopenssl req -new -x509 -sha256 -key server.key -out server.crt -days 36500")
 		return
