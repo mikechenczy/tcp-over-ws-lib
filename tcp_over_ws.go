@@ -787,7 +787,7 @@ func dnsPreferIpWithTtl(hostname string, ttl uint32) {
 func start(args []string) {
 	arg_num := len(args)
 	if arg_num < 5 || arg_num%2 != 0 {
-		log.Println("Version: ", "1.2")
+		log.Println("Version: ", "1.3")
 		log.Println("")
 		log.Println("Usage:")
 		log.Println("Client: ws://addr auto(or ip/domain) none(or auto/your http proxy) server1 listenPort1 ...")
