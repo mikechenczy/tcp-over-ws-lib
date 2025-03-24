@@ -35,14 +35,16 @@ type tcp2wsSparkle struct {
 
 var (
 	//tcpAddr    string
-	tcpAddresses = make(map[string]string)
-	proxy        string
-	wsAddr       string
-	wsAddrIp     string
-	wsAddrPort       = ""
-	msgType      int = websocket.BinaryMessage
-	isServer     bool
-	connMap      = make(map[string]*tcp2wsSparkle)
+	addrMap = make(map[string]string)
+	// 同样的原理：！！！go的map不是线程安全的 读写冲突就会直接exit！！！
+	addrMapLock = new(sync.RWMutex)
+	proxy       string
+	wsAddr      string
+	wsAddrIp    string
+	wsAddrPort      = ""
+	msgType     int = websocket.BinaryMessage
+	isServer    bool
+	connMap     = make(map[string]*tcp2wsSparkle)
 	// go的map不是线程安全的 读写冲突就会直接exit
 	connMapLock = new(sync.RWMutex)
 )
@@ -84,6 +86,19 @@ func deleteConn(uuid string) {
 		}
 		delete(connMap, uuid)
 	}
+}
+
+func getAddr(uuid string) (string, bool) {
+	addrMapLock.RLock()
+	defer addrMapLock.RUnlock()
+	addr, haskey := addrMap[uuid]
+	return addr, haskey
+}
+
+func setAddr(uuid string, addr string) {
+	addrMapLock.Lock()
+	defer addrMapLock.Unlock()
+	addrMap[uuid] = addr
 }
 
 func dialNewWs(uuid string, serverPath string) bool {
@@ -571,7 +586,7 @@ func newReverseProxy(target string, pathPrefix string) *httputil.ReverseProxy {
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	if path != "" {
-		for k, v := range tcpAddresses {
+		for k, v := range addrMap {
 			firstPath := strings.Split(path, "/")[0]
 			if firstPath == k && strings.HasPrefix(v, "rp:") {
 				//Reverse Proxy
@@ -607,7 +622,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	target, exists := tcpAddresses[path]
+	target, exists := getAddr(path)
 	if !exists {
 		http.Error(w, "Invalid path", http.StatusNotFound)
 		log.Println("Invalid WS path:", path)
@@ -817,16 +832,16 @@ func start(args []string) {
 			} else {
 				tcpAddr = serverUrl
 			}
-			tcpAddresses[args[i]] = tcpAddr
+			setAddr(args[i], tcpAddr)
 		}
 		go startWsServer(listenHostPort, isSsl, sslCrt, sslKey)
 		if isSsl {
-			for _, v := range tcpAddresses {
+			for _, v := range addrMap {
 				log.Print("Server Started wss://" + listenHostPort + " -> " + v)
 			}
 			log.Print("Proxy with Nginx:\nlocation /" + uuid.New().String()[24:] + "/ {\nproxy_pass https://")
 		} else {
-			for _, v := range tcpAddresses {
+			for _, v := range addrMap {
 				log.Print("Server Started ws://" + listenHostPort + " -> " + v)
 			}
 			log.Print("Proxy with Nginx:\nlocation /" + uuid.New().String()[24:] + "/ {\nproxy_pass http://")
